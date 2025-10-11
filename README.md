@@ -4,11 +4,11 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/andrewortman/workqueue)](https://goreportcard.com/report/github.com/andrewortman/workqueue)
 [![Release](https://img.shields.io/github/v/release/andrewortman/workqueue.svg?style=flat-square)](https://github.com/andrewortman/workqueue/releases/latest)
 
-**workqueue** is a high-performance task queue for Go applications. It provides powerful features like task expiration, delayed execution, and prioritization, all without external dependencies. The current implementation is in-memory, ensuring low latency and high throughput for demanding workloads. It was designed as a [crawl frontier](https://en.wikipedia.org/wiki/Crawl_frontier).
+**workqueue** is a high-performance task queue for Go applications. It provides powerful features like task expiration, delayed execution, deduplication by key, and prioritization, all without external dependencies. The current implementation is in-memory, ensuring low latency and high throughput for any workload. It was designed as a [crawl frontier](https://en.wikipedia.org/wiki/Crawl_frontier).
 
 ## Features
 
-- **Fast Processing**: All operations are performed efficiently, providing extremely fast task processing.
+- **Fast Processing**: All operations (put, update, take, insert, expiration, delay) are all done in either `O(n*log(n))` time or better using several priority queues to maintain state.
 - **Task Expiration**: Set an expiration time for items to ensure they are processed within a specific timeframe. Expired items are automatically removed.
 - **Delayed Execution**: Schedule items to become available for processing only after a certain delay.
 - **Prioritization**: Assign priorities to items to control the order of execution. Higher priority items are processed first.
@@ -63,6 +63,8 @@ Adds one or more new items to the queue. It returns an error if an item with the
 #### `Update`
 Updates one or more existing items. It returns an error if an item's key is not found in the queue.
 
+This can be used to update any field of the work item - eg priority, delay, or expiration.
+
 ```go
 	updatedItem := workqueue.WorkItem[string, string]{
 		Key:   "task1",
@@ -75,7 +77,7 @@ Updates one or more existing items. It returns an error if an item's key is not 
 ```
 
 #### `PutOrUpdate`
-Adds new items or updates existing ones. This is useful when you want to ensure an item is in the queue, regardless of whether it was there before.
+Adds new items or updates existing ones. This is useful when you want to ensure an item is in the queue, regardless of whether it was there before. 
 
 ```go
 	newItem := workqueue.WorkItem[string, string]{
