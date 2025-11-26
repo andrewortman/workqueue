@@ -11,7 +11,7 @@ import (
 )
 
 func TestInMemory_PriorityOrdering(t *testing.T) {
-	q := NewInMemory[string, string](nil)
+	q := NewInMemory[string, string]()
 	ctx := context.Background()
 
 	mockTime := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -40,7 +40,7 @@ func TestInMemory_PriorityOrdering(t *testing.T) {
 
 func TestInMemory_TakeMany(t *testing.T) {
 	t.Run("basic functionality", func(t *testing.T) {
-		q := NewInMemory[string, string](nil)
+		q := NewInMemory[string, string]()
 		ctx := context.Background()
 		expiry := time.Now().Add(time.Hour)
 
@@ -60,7 +60,7 @@ func TestInMemory_TakeMany(t *testing.T) {
 	})
 
 	t.Run("context cancellation", func(t *testing.T) {
-		q := NewInMemory[string, string](nil)
+		q := NewInMemory[string, string]()
 		ctx, cancel := context.WithCancel(context.Background())
 		expiry := time.Now().Add(time.Hour)
 
@@ -100,7 +100,7 @@ func TestInMemory_TakeMany(t *testing.T) {
 }
 
 func TestInMemory_TakeFIFOScheduling(t *testing.T) {
-	q := NewInMemory[string, string](nil)
+	q := NewInMemory[string, string]()
 	ctx := context.Background()
 	expiry := time.Now().Add(time.Hour)
 
@@ -168,7 +168,7 @@ func TestInMemory_TakeFIFOScheduling(t *testing.T) {
 }
 
 func TestInMemory_TTLExpiry(t *testing.T) {
-	q := NewInMemory[string, string](nil)
+	q := NewInMemory[string, string]()
 	ctx := context.Background()
 
 	mockTime := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -257,7 +257,7 @@ func TestInMemory_ExpirationScenarios(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			q := NewInMemory[string, string](nil)
+			q := NewInMemory[string, string]()
 			ctx := context.Background()
 
 			mockTime := baseTime
@@ -295,7 +295,7 @@ func TestInMemory_ExpirationScenarios(t *testing.T) {
 }
 
 func TestInMemory_PutOrUpdate(t *testing.T) {
-	q := NewInMemory[string, string](nil)
+	q := NewInMemory[string, string]()
 	ctx := context.Background()
 	expiry := time.Now().Add(time.Hour)
 
@@ -315,7 +315,7 @@ func TestInMemory_PutOrUpdate(t *testing.T) {
 
 func TestInMemory_ErrorTypes(t *testing.T) {
 	t.Run("item already exists", func(t *testing.T) {
-		q := NewInMemory[string, string](nil)
+		q := NewInMemory[string, string]()
 		ctx := context.Background()
 		expiry := time.Now().Add(time.Hour)
 
@@ -326,7 +326,7 @@ func TestInMemory_ErrorTypes(t *testing.T) {
 	})
 
 	t.Run("item not found", func(t *testing.T) {
-		q := NewInMemory[string, string](nil)
+		q := NewInMemory[string, string]()
 		ctx := context.Background()
 
 		err := q.Update(ctx, WorkItem[string, string]{Key: "not-found", Value: "v"})
@@ -337,7 +337,7 @@ func TestInMemory_ErrorTypes(t *testing.T) {
 	})
 
 	t.Run("expiry before delay", func(t *testing.T) {
-		q := NewInMemory[string, string](nil)
+		q := NewInMemory[string, string]()
 		ctx := context.Background()
 
 		delay := time.Now().Add(time.Minute)
@@ -348,7 +348,7 @@ func TestInMemory_ErrorTypes(t *testing.T) {
 }
 
 func TestInMemory_DelayBasic(t *testing.T) {
-	q := NewInMemory[string, string](nil)
+	q := NewInMemory[string, string]()
 	ctx := context.Background()
 
 	mockTime := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -378,7 +378,7 @@ func TestInMemory_DelayBasic(t *testing.T) {
 
 func TestInMemory_Remove(t *testing.T) {
 	t.Run("remove existing item", func(t *testing.T) {
-		q := NewInMemory[string, string](nil)
+		q := NewInMemory[string, string]()
 		ctx := context.Background()
 		expiry := time.Now().Add(time.Hour)
 
@@ -394,7 +394,7 @@ func TestInMemory_Remove(t *testing.T) {
 	})
 
 	t.Run("remove non-existent item", func(t *testing.T) {
-		q := NewInMemory[string, string](nil)
+		q := NewInMemory[string, string]()
 		ctx := context.Background()
 		err := q.Remove(ctx, "nonexistent")
 		require.Error(t, err)
@@ -404,7 +404,7 @@ func TestInMemory_Remove(t *testing.T) {
 
 func TestInMemory_UpdateConditional(t *testing.T) {
 	t.Run("updates when predicate returns true", func(t *testing.T) {
-		q := NewInMemory[string, string](nil)
+		q := NewInMemory[string, string]()
 		ctx := context.Background()
 		expiry := time.Now().Add(time.Hour)
 
@@ -425,7 +425,7 @@ func TestInMemory_UpdateConditional(t *testing.T) {
 	})
 
 	t.Run("skips update when predicate returns false", func(t *testing.T) {
-		q := NewInMemory[string, string](nil)
+		q := NewInMemory[string, string]()
 		ctx := context.Background()
 		expiry := time.Now().Add(time.Hour)
 
@@ -446,7 +446,7 @@ func TestInMemory_UpdateConditional(t *testing.T) {
 	})
 
 	t.Run("returns error for non-existent item", func(t *testing.T) {
-		q := NewInMemory[string, string](nil)
+		q := NewInMemory[string, string]()
 		ctx := context.Background()
 		expiry := time.Now().Add(time.Hour)
 
@@ -460,9 +460,164 @@ func TestInMemory_UpdateConditional(t *testing.T) {
 	})
 }
 
+func TestInMemory_WithTimeProvider(t *testing.T) {
+	mockTime := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+	tp := &mockTimeProvider{now: mockTime}
+
+	q := NewInMemory[string, string](WithTimeProvider[string, string](tp))
+	ctx := context.Background()
+
+	// Add item that expires in 5 seconds
+	err := q.Put(ctx, WorkItem[string, string]{Key: "test", Value: "test", ExpiresAt: mockTime.Add(5 * time.Second)})
+	require.NoError(t, err)
+
+	// Advance time past expiry
+	tp.now = mockTime.Add(10 * time.Second)
+
+	// Item should be expired
+	size, err := q.Size(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, 0, size.Pending)
+}
+
+type mockTimeProvider struct {
+	now time.Time
+}
+
+func (m *mockTimeProvider) Now() time.Time {
+	return m.now
+}
+
+func TestInMemory_WithCapacity(t *testing.T) {
+	t.Run("put fails at capacity", func(t *testing.T) {
+		q := NewInMemory[string, string](WithCapacity[string, string](2))
+		ctx := context.Background()
+
+		err := q.Put(ctx, WorkItem[string, string]{Key: "a", Value: "a"})
+		require.NoError(t, err)
+
+		err = q.Put(ctx, WorkItem[string, string]{Key: "b", Value: "b"})
+		require.NoError(t, err)
+
+		err = q.Put(ctx, WorkItem[string, string]{Key: "c", Value: "c"})
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrAtCapacity)
+
+		size, err := q.Size(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, 2, size.Pending)
+	})
+
+	t.Run("put batch fails if it would exceed capacity", func(t *testing.T) {
+		q := NewInMemory[string, string](WithCapacity[string, string](2))
+		ctx := context.Background()
+
+		err := q.Put(ctx, WorkItem[string, string]{Key: "a", Value: "a"})
+		require.NoError(t, err)
+
+		// Trying to add 2 items when only 1 slot is available should fail
+		err = q.Put(ctx,
+			WorkItem[string, string]{Key: "b", Value: "b"},
+			WorkItem[string, string]{Key: "c", Value: "c"},
+		)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrAtCapacity)
+
+		// Original item should still be there
+		size, err := q.Size(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, 1, size.Pending)
+	})
+
+	t.Run("put or update allows updates at capacity", func(t *testing.T) {
+		q := NewInMemory[string, string](WithCapacity[string, string](2))
+		ctx := context.Background()
+
+		err := q.Put(ctx,
+			WorkItem[string, string]{Key: "a", Value: "a"},
+			WorkItem[string, string]{Key: "b", Value: "b"},
+		)
+		require.NoError(t, err)
+
+		// Update existing item should work
+		err = q.PutOrUpdate(ctx, WorkItem[string, string]{Key: "a", Value: "updated"})
+		require.NoError(t, err)
+
+		// Verify the update
+		item, err := q.Take(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, "updated", item.Value)
+	})
+
+	t.Run("put or update fails for new items at capacity", func(t *testing.T) {
+		q := NewInMemory[string, string](WithCapacity[string, string](2))
+		ctx := context.Background()
+
+		err := q.Put(ctx,
+			WorkItem[string, string]{Key: "a", Value: "a"},
+			WorkItem[string, string]{Key: "b", Value: "b"},
+		)
+		require.NoError(t, err)
+
+		// New item should fail
+		err = q.PutOrUpdate(ctx, WorkItem[string, string]{Key: "c", Value: "c"})
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrAtCapacity)
+	})
+
+	t.Run("put or update mixed batch fails if new items exceed capacity", func(t *testing.T) {
+		q := NewInMemory[string, string](WithCapacity[string, string](2))
+		ctx := context.Background()
+
+		err := q.Put(ctx, WorkItem[string, string]{Key: "a", Value: "a"})
+		require.NoError(t, err)
+
+		// Mix of update and new items - should fail since new item would exceed capacity
+		err = q.PutOrUpdate(ctx,
+			WorkItem[string, string]{Key: "a", Value: "updated"},
+			WorkItem[string, string]{Key: "b", Value: "b"},
+			WorkItem[string, string]{Key: "c", Value: "c"}, // this would exceed capacity
+		)
+		require.Error(t, err)
+		assert.ErrorIs(t, err, ErrAtCapacity)
+
+		// Original item should be unchanged since batch failed
+		size, err := q.Size(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, 1, size.Pending)
+	})
+
+	t.Run("zero capacity means unlimited", func(t *testing.T) {
+		q := NewInMemory[string, string](WithCapacity[string, string](0))
+		ctx := context.Background()
+
+		// Should be able to add many items
+		for i := 0; i < 100; i++ {
+			err := q.Put(ctx, WorkItem[string, string]{Key: string(rune('a' + i)), Value: "v"})
+			require.NoError(t, err)
+		}
+
+		size, err := q.Size(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, 100, size.Pending)
+	})
+
+	t.Run("negative capacity means unlimited", func(t *testing.T) {
+		q := NewInMemory[string, string](WithCapacity[string, string](-1))
+		ctx := context.Background()
+
+		err := q.Put(ctx, WorkItem[string, string]{Key: "a", Value: "a"})
+		require.NoError(t, err)
+
+		size, err := q.Size(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, 1, size.Pending)
+	})
+}
+
 func TestInMemory_PutOrUpdateConditional(t *testing.T) {
 	t.Run("inserts new item when predicate returns true", func(t *testing.T) {
-		q := NewInMemory[string, string](nil)
+		q := NewInMemory[string, string]()
 		ctx := context.Background()
 		expiry := time.Now().Add(time.Hour)
 
@@ -479,7 +634,7 @@ func TestInMemory_PutOrUpdateConditional(t *testing.T) {
 	})
 
 	t.Run("skips insert when predicate returns false", func(t *testing.T) {
-		q := NewInMemory[string, string](nil)
+		q := NewInMemory[string, string]()
 		ctx := context.Background()
 		expiry := time.Now().Add(time.Hour)
 
@@ -496,7 +651,7 @@ func TestInMemory_PutOrUpdateConditional(t *testing.T) {
 	})
 
 	t.Run("updates existing item when predicate returns true", func(t *testing.T) {
-		q := NewInMemory[string, string](nil)
+		q := NewInMemory[string, string]()
 		ctx := context.Background()
 		expiry := time.Now().Add(time.Hour)
 
@@ -517,7 +672,7 @@ func TestInMemory_PutOrUpdateConditional(t *testing.T) {
 	})
 
 	t.Run("skips update of existing item when predicate returns false", func(t *testing.T) {
-		q := NewInMemory[string, string](nil)
+		q := NewInMemory[string, string]()
 		ctx := context.Background()
 		expiry := time.Now().Add(time.Hour)
 

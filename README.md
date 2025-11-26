@@ -44,6 +44,30 @@ func main() {
 }
 ```
 
+### Configuration Options
+
+The queue can be configured with functional options:
+
+```go
+	// With a custom time provider (useful for testing)
+	queue := workqueue.NewInMemory[string, string](
+		workqueue.WithTimeProvider[string, string](myTimeProvider),
+	)
+
+	// With a capacity limit
+	queue := workqueue.NewInMemory[string, string](
+		workqueue.WithCapacity[string, string](1000),
+	)
+```
+
+#### `WithTimeProvider`
+Injects a custom `TimeProvider` for controlling time in tests or other scenarios.
+
+#### `WithCapacity`
+Sets a maximum number of items the queue can hold. When at capacity:
+- `Put` returns `ErrAtCapacity`
+- `PutOrUpdate` returns `ErrAtCapacity` only if it would insert new items; updates still succeed
+
 ### Public API
 
 #### `Put`

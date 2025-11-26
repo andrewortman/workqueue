@@ -19,6 +19,8 @@ var (
 	ErrItemExists = errors.New("workqueue: item already exists")
 	// ErrItemNotFound is returned when an item is not found in the queue.
 	ErrItemNotFound = errors.New("workqueue: item not found")
+	// ErrAtCapacity is returned when the queue is at capacity and cannot accept new items.
+	ErrAtCapacity = errors.New("workqueue: queue is at capacity")
 )
 
 // WorkItem represents a unit of work in the queue.
@@ -45,6 +47,9 @@ type node[K comparable, V comparable] struct {
 type TimeProvider interface {
 	Now() time.Time
 }
+
+// Option configures an InMemory queue.
+type Option[K comparable, V comparable] func(*InMemory[K, V])
 
 // takeRequest is a struct that holds information about a pending Take or TakeMany call.
 type takeRequest struct {
@@ -77,26 +82,50 @@ type InMemory[K comparable, V comparable] struct {
 
 	// onTakeWait is a test hook that is called when a consumer starts waiting.
 	onTakeWait func()
+
+	// capacity is the maximum number of items the queue can hold. 0 means unlimited.
+	capacity int
 }
 
-// NewInMemory constructs the queue.
-// If timeProvider is nil, time.Now will be used.
-func NewInMemory[K comparable, V comparable](timeProvider TimeProvider) *InMemory[K, V] {
-	nowFunc := time.Now
-	if timeProvider != nil {
-		nowFunc = timeProvider.Now
+// WithTimeProvider sets a custom time provider for the queue.
+func WithTimeProvider[K comparable, V comparable](tp TimeProvider) Option[K, V] {
+	return func(q *InMemory[K, V]) {
+		if tp != nil {
+			q.now = tp.Now
+		}
 	}
+}
 
+// WithCapacity sets the maximum number of items the queue can hold.
+// When the queue is at capacity, Put will return ErrAtCapacity.
+// PutOrUpdate will still succeed if it only results in an update (no new items).
+// A capacity of 0 or negative means unlimited.
+func WithCapacity[K comparable, V comparable](capacity int) Option[K, V] {
+	return func(q *InMemory[K, V]) {
+		if capacity > 0 {
+			q.capacity = capacity
+		}
+	}
+}
+
+// NewInMemory constructs the queue with the provided options.
+func NewInMemory[K comparable, V comparable](opts ...Option[K, V]) *InMemory[K, V] {
 	q := &InMemory[K, V]{
-		now:   nowFunc,
+		now:   time.Now,
 		items: make(map[K]*node[K, V]),
 	}
 	q.cond = sync.NewCond(&q.mu)
+
+	for _, opt := range opts {
+		opt(q)
+	}
+
 	return q
 }
 
 // Put synchronously adds new items to the queue.
 // Returns an error if an item with the same key already exists.
+// Returns ErrAtCapacity if the queue has a capacity limit and adding the items would exceed it.
 func (q *InMemory[K, V]) Put(ctx context.Context, items ...WorkItem[K, V]) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -115,6 +144,11 @@ func (q *InMemory[K, V]) Put(ctx context.Context, items ...WorkItem[K, V]) error
 		if _, exists := q.items[item.Key]; exists {
 			return fmt.Errorf("%w: key %v", ErrItemExists, item.Key)
 		}
+	}
+
+	// Check capacity before adding new items
+	if q.capacity > 0 && len(q.items)+len(items) > q.capacity {
+		return ErrAtCapacity
 	}
 
 	q.maintainHeapsLocked()
@@ -203,6 +237,7 @@ func (q *InMemory[K, V]) PutOrUpdateConditional(ctx context.Context, shouldUpdat
 
 // internalPutOrUpdate implements the core put-or-update logic with an optional predicate.
 // If shouldUpdate is nil, all inserts and updates are performed unconditionally.
+// When the queue is at capacity, updates are still allowed but new inserts return ErrAtCapacity.
 // Must be called with the lock NOT held (it will acquire the lock).
 func (q *InMemory[K, V]) internalPutOrUpdate(ctx context.Context, shouldUpdate func(existing *WorkItem[K, V], new WorkItem[K, V]) bool, items ...WorkItem[K, V]) error {
 	q.mu.Lock()
@@ -222,6 +257,22 @@ func (q *InMemory[K, V]) internalPutOrUpdate(ctx context.Context, shouldUpdate f
 
 	// Run maintenance
 	q.maintainHeapsLocked()
+
+	// Count how many new items would be inserted for capacity check
+	if q.capacity > 0 {
+		newItemCount := 0
+		for _, item := range items {
+			if _, exists := q.items[item.Key]; !exists {
+				// Check predicate for new items
+				if shouldUpdate == nil || shouldUpdate(nil, item) {
+					newItemCount++
+				}
+			}
+		}
+		if len(q.items)+newItemCount > q.capacity {
+			return ErrAtCapacity
+		}
+	}
 
 	// Process items in order. If duplicates exist in the batch, later items will
 	// simply overwrite the earlier ones.
