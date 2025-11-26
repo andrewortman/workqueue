@@ -65,8 +65,8 @@ Injects a custom `TimeProvider` for controlling time in tests or other scenarios
 
 #### `WithCapacity`
 Sets a maximum number of items the queue can hold. When at capacity:
-- `Put` returns `ErrAtCapacity`
-- `PutOrUpdate` returns `ErrAtCapacity` only if it would insert new items; updates still succeed
+- `Put` returns `ErrAtCapacity` and performs no mutations
+- `PutOrUpdate` returns `ErrAtCapacity` and performs no mutations if any new items would exceed capacity; a batch containing only updates to existing keys will succeed
 
 ### Public API
 

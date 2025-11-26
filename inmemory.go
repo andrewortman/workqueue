@@ -237,7 +237,8 @@ func (q *InMemory[K, V]) PutOrUpdateConditional(ctx context.Context, shouldUpdat
 
 // internalPutOrUpdate implements the core put-or-update logic with an optional predicate.
 // If shouldUpdate is nil, all inserts and updates are performed unconditionally.
-// When the queue is at capacity, updates are still allowed but new inserts return ErrAtCapacity.
+// When the queue is at capacity and any new items would be inserted, returns ErrAtCapacity
+// without performing any mutations. A batch containing only updates will succeed at capacity.
 // Must be called with the lock NOT held (it will acquire the lock).
 func (q *InMemory[K, V]) internalPutOrUpdate(ctx context.Context, shouldUpdate func(existing *WorkItem[K, V], new WorkItem[K, V]) bool, items ...WorkItem[K, V]) error {
 	q.mu.Lock()
