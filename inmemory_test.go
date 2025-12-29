@@ -99,6 +99,219 @@ func TestInMemory_TakeMany(t *testing.T) {
 	})
 }
 
+func TestInMemory_TakeUpTo(t *testing.T) {
+	t.Run("takes all available when fewer than max", func(t *testing.T) {
+		q := NewInMemory[string, string]()
+		ctx := context.Background()
+		expiry := time.Now().Add(time.Hour)
+
+		items := []WorkItem[string, string]{
+			{Key: "a", Value: "a", Priority: 100, ExpiresAt: expiry},
+			{Key: "b", Value: "b", Priority: 90, ExpiresAt: expiry},
+		}
+		require.NoError(t, q.Put(ctx, items...))
+
+		taken, err := q.TakeUpTo(ctx, 5)
+		require.NoError(t, err)
+		require.Len(t, taken, 2)
+		assert.Equal(t, "a", taken[0].Value)
+		assert.Equal(t, "b", taken[1].Value)
+	})
+
+	t.Run("caps at max items when more available", func(t *testing.T) {
+		q := NewInMemory[string, string]()
+		ctx := context.Background()
+		expiry := time.Now().Add(time.Hour)
+
+		items := []WorkItem[string, string]{
+			{Key: "a", Value: "a", Priority: 100, ExpiresAt: expiry},
+			{Key: "b", Value: "b", Priority: 90, ExpiresAt: expiry},
+			{Key: "c", Value: "c", Priority: 80, ExpiresAt: expiry},
+			{Key: "d", Value: "d", Priority: 70, ExpiresAt: expiry},
+		}
+		require.NoError(t, q.Put(ctx, items...))
+
+		taken, err := q.TakeUpTo(ctx, 2)
+		require.NoError(t, err)
+		require.Len(t, taken, 2)
+		assert.Equal(t, "a", taken[0].Value)
+		assert.Equal(t, "b", taken[1].Value)
+
+		// Verify remaining items
+		size, err := q.Size(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, 2, size.Pending)
+	})
+
+	t.Run("blocks until at least one item available", func(t *testing.T) {
+		q := NewInMemory[string, string]()
+		ctx := context.Background()
+		expiry := time.Now().Add(time.Hour)
+
+		var wg sync.WaitGroup
+		wg.Add(1)
+
+		waitCh := make(chan struct{})
+		q.mu.Lock()
+		q.onTakeWait = func() {
+			close(waitCh)
+		}
+		q.mu.Unlock()
+
+		var taken []WorkItem[string, string]
+		var takeErr error
+		go func() {
+			defer wg.Done()
+			taken, takeErr = q.TakeUpTo(ctx, 5)
+		}()
+
+		<-waitCh // Wait for consumer to be blocking
+
+		// Add items while consumer is waiting
+		require.NoError(t, q.Put(ctx, WorkItem[string, string]{Key: "a", Value: "a", Priority: 100, ExpiresAt: expiry}))
+		require.NoError(t, q.Put(ctx, WorkItem[string, string]{Key: "b", Value: "b", Priority: 90, ExpiresAt: expiry}))
+
+		wg.Wait()
+
+		require.NoError(t, takeErr)
+		require.Len(t, taken, 2)
+	})
+
+	t.Run("context cancellation", func(t *testing.T) {
+		q := NewInMemory[string, string]()
+		ctx, cancel := context.WithCancel(context.Background())
+
+		var wg sync.WaitGroup
+		wg.Add(1)
+
+		waitCh := make(chan struct{})
+		q.mu.Lock()
+		q.onTakeWait = func() {
+			close(waitCh)
+		}
+		q.mu.Unlock()
+
+		var taken []WorkItem[string, string]
+		var takeErr error
+		go func() {
+			defer wg.Done()
+			taken, takeErr = q.TakeUpTo(ctx, 5)
+		}()
+
+		<-waitCh
+		cancel()
+		wg.Wait()
+
+		require.Error(t, takeErr)
+		assert.ErrorIs(t, takeErr, context.Canceled)
+		require.Len(t, taken, 0)
+	})
+
+	t.Run("returns nil for zero or negative max", func(t *testing.T) {
+		q := NewInMemory[string, string]()
+		ctx := context.Background()
+		expiry := time.Now().Add(time.Hour)
+
+		require.NoError(t, q.Put(ctx, WorkItem[string, string]{Key: "a", Value: "a", ExpiresAt: expiry}))
+
+		taken, err := q.TakeUpTo(ctx, 0)
+		require.NoError(t, err)
+		require.Nil(t, taken)
+
+		taken, err = q.TakeUpTo(ctx, -1)
+		require.NoError(t, err)
+		require.Nil(t, taken)
+
+		// Item should still be in queue
+		size, err := q.Size(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, 1, size.Pending)
+	})
+
+	t.Run("respects priority ordering", func(t *testing.T) {
+		q := NewInMemory[string, string]()
+		ctx := context.Background()
+		expiry := time.Now().Add(time.Hour)
+
+		// Add items in random priority order
+		items := []WorkItem[string, string]{
+			{Key: "low", Value: "low", Priority: 10, ExpiresAt: expiry},
+			{Key: "high", Value: "high", Priority: 100, ExpiresAt: expiry},
+			{Key: "medium", Value: "medium", Priority: 50, ExpiresAt: expiry},
+		}
+		require.NoError(t, q.Put(ctx, items...))
+
+		taken, err := q.TakeUpTo(ctx, 2)
+		require.NoError(t, err)
+		require.Len(t, taken, 2)
+		assert.Equal(t, "high", taken[0].Value)
+		assert.Equal(t, "medium", taken[1].Value)
+	})
+
+	t.Run("fifo scheduling with TakeMany", func(t *testing.T) {
+		q := NewInMemory[string, string]()
+		ctx := context.Background()
+		expiry := time.Now().Add(time.Hour)
+
+		var wg sync.WaitGroup
+		wg.Add(2)
+
+		firstConsumerWaitingCh := make(chan struct{})
+		secondConsumerWaitingCh := make(chan struct{})
+
+		// Start first consumer using TakeMany (wants exactly 2)
+		var takenMany []WorkItem[string, string]
+		go func() {
+			defer wg.Done()
+			var err error
+			takenMany, err = q.TakeMany(ctx, 2)
+			require.NoError(t, err)
+		}()
+
+		q.mu.Lock()
+		q.onTakeWait = func() {
+			close(firstConsumerWaitingCh)
+		}
+		q.mu.Unlock()
+		<-firstConsumerWaitingCh
+
+		// Start second consumer using TakeUpTo
+		var takenUpTo []WorkItem[string, string]
+		go func() {
+			defer wg.Done()
+			var err error
+			takenUpTo, err = q.TakeUpTo(ctx, 10)
+			require.NoError(t, err)
+		}()
+
+		q.mu.Lock()
+		q.onTakeWait = func() {
+			close(secondConsumerWaitingCh)
+		}
+		q.mu.Unlock()
+		<-secondConsumerWaitingCh
+		q.mu.Lock()
+		q.onTakeWait = nil
+		q.mu.Unlock()
+
+		// Add items
+		require.NoError(t, q.Put(ctx, WorkItem[string, string]{Key: "a", Value: "a", ExpiresAt: expiry, Priority: 1}))
+		require.NoError(t, q.Put(ctx, WorkItem[string, string]{Key: "b", Value: "b", ExpiresAt: expiry, Priority: 2}))
+		require.NoError(t, q.Put(ctx, WorkItem[string, string]{Key: "c", Value: "c", ExpiresAt: expiry, Priority: 3}))
+
+		wg.Wait()
+
+		// First consumer (TakeMany) should get first 2 items by priority
+		require.Len(t, takenMany, 2)
+		assert.Equal(t, "c", takenMany[0].Value)
+		assert.Equal(t, "b", takenMany[1].Value)
+
+		// Second consumer (TakeUpTo) should get remaining item
+		require.Len(t, takenUpTo, 1)
+		assert.Equal(t, "a", takenUpTo[0].Value)
+	})
+}
+
 func TestInMemory_TakeFIFOScheduling(t *testing.T) {
 	q := NewInMemory[string, string]()
 	ctx := context.Background()

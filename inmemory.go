@@ -390,6 +390,77 @@ func (q *InMemory[K, V]) TakeMany(ctx context.Context, n int) ([]WorkItem[K, V],
 	}
 }
 
+// TakeUpTo blocks until at least one item is available, then takes up to maxItems.
+// Unlike TakeMany which waits for exactly n items, TakeUpTo greedily takes whatever
+// is available (up to maxItems) once at least one item is ready.
+// If the context is canceled, it returns immediately with a context error and no items.
+func (q *InMemory[K, V]) TakeUpTo(ctx context.Context, maxItems int) ([]WorkItem[K, V], error) {
+	if maxItems <= 0 {
+		return nil, nil
+	}
+
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	// Create and enqueue a take request for 1 item (minimum to proceed)
+	req := &takeRequest{n: 1}
+	q.takeQueue = append(q.takeQueue, req)
+
+	// Single cancellation monitor goroutine for this TakeUpTo call
+	cancelMonitor := make(chan struct{})
+	defer close(cancelMonitor)
+	go func() {
+		select {
+		case <-ctx.Done():
+			q.mu.Lock()
+			q.cond.Broadcast()
+			q.mu.Unlock()
+		case <-cancelMonitor:
+			return
+		}
+	}()
+
+	for {
+		// If context was canceled, remove the request from the queue and return.
+		if err := ctx.Err(); err != nil {
+			q.removeTakeRequestLocked(req)
+			return nil, err
+		}
+
+		q.maintainHeapsLocked()
+
+		// Check if we are the head of the take queue and if there is at least one item.
+		if len(q.takeQueue) > 0 && q.takeQueue[0] == req && len(q.prio) >= 1 {
+			// Dequeue the request.
+			q.takeQueue = q.takeQueue[1:]
+
+			// Take up to maxItems
+			takeCount := len(q.prio)
+			if takeCount > maxItems {
+				takeCount = maxItems
+			}
+
+			result := make([]WorkItem[K, V], takeCount)
+			for i := 0; i < takeCount; i++ {
+				node := heap.Pop(&q.prio).(*node[K, V])
+				q.removeItemLocked(node)
+				result[i] = node.item
+			}
+
+			// Broadcast to wake up other waiters, as the queue state has changed.
+			q.cond.Broadcast()
+
+			return result, nil
+		}
+
+		// wait for new items or context cancellation
+		if q.onTakeWait != nil {
+			q.onTakeWait()
+		}
+		q.cond.Wait()
+	}
+}
+
 type SizeResult struct {
 	Pending int
 	Delayed int
